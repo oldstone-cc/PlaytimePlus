@@ -1,0 +1,6 @@
+name: PlaytimeChat
+version: 1.0
+main: main.java.com.playtime.PlaytimeChat
+author: YourName
+description: Displays playtime in chat
+depend: [PermissionsEx]

@@ -1,0 +1,12 @@
+{
+    "java.project.sourcePaths": [
+        "src"
+    ],
+    "java.project.outputPath": "bin",
+    "java.project.referencedLibraries": [
+        "lib\\PermissionsEx.jar",
+        "c:\\Users\\cen0b\\Documents\\devops\\beta plugins\\PlayTime\\com.cen0b.playtime\\lib\\project-poseidon-1.1.10.jar",
+        "c:\\Users\\cen0b\\Documents\\devops\\beta plugins\\PlayTime\\com.cen0b.playtime\\lib\\Essentials.jar",
+        "c:\\Users\\cen0b\\Documents\\devops\\beta plugins\\PlayTime\\com.cen0b.playtime\\lib\\Vault.jar"
+    ]
+}

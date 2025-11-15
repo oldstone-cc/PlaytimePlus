@@ -1,0 +1,14 @@
+name: PlaytimePlus
+version: 1.1
+main: main.java.com.playtime.PlaytimePlus
+author: YourName
+description: Displays playtime in chat and restricts item usage by playtime
+depend: [PermissionsEx]
+commands:
+  playtime:
+    description: Check your playtime or another player's playtime
+    usage: /playtime [player]
+    aliases: [pt]
+  pt:
+    description: Check your playtime or another player's playtime
+    usage: /pt [player]

@@ -1,0 +1,34 @@
+# PlaytimePlus Configuration Example
+# This file shows all available configuration options
+
+# Display playtime in chat messages (true/false)
+show-playtime-in-chat: true
+
+# Restriction messages with color codes
+# &c = red, &f = white, &7 = gray, &e = yellow, etc.
+# Variables: {TIME} = required time, {ITEM} = item name
+restriction-message-use: '&cYou need &f{TIME}&c more playtime to use &f{ITEM}&c!'
+restriction-message-place: '&cYou need &f{TIME}&c more playtime to place &f{ITEM}&c!'
+
+# Playtime command messages
+# Variables: {PLAYER} = player name, {TIME} = playtime
+playtime-command-message: '&f{PLAYER}&7 playtime: &f{TIME}'
+playtime-command-not-found: '&cPlayer &f{PLAYER}&c not found!'
+
+# Item Playtime Restrictions
+# Format: ITEM_NAME: hours_required
+# Use pre-flattening Minecraft item names (check your server version)
+
+# Examples (uncomment and modify to enable):
+TNT: 24
+FLINT_AND_STEEL: 720
+
+# Additional examples:
+# DIAMOND_PICKAXE: 168
+# DIAMOND_SWORD: 72
+# LAVA_BUCKET: 336
+# WATER_BUCKET: 360
+
+# Commands:
+# /playtime [player] - Check playtime (shows own if no player specified)
+# /pt [player] - Shorthand for /playtime
