@@ -13,6 +13,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.Bukkit;
 import org.bukkit.inventory.ItemStack;
 
@@ -28,14 +29,20 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
 
     private final Map<UUID, Long> sessionStarts = new HashMap<>();
     private final Map<UUID, Long> totals = new HashMap<>();
+    private final Map<UUID, Long> lastActivityTime = new HashMap<>();
     private int timerTaskId = -1;
     private final Map<String, Long> restrictedItems = new HashMap<>();
     
     private boolean showPlaytimeInChat = true;
+    private boolean afkDetectionEnabled = true;
+    private long afkTimeout = 600000; // 10 minutes in milliseconds
+    private String adminPermission = "Admin";
     private String restrictionMessageUse = "&cYou need &f{TIME}&c more playtime to use &f{ITEM}&c!";
     private String restrictionMessagePlace = "&cYou need &f{TIME}&c more playtime to place &f{ITEM}&c!";
     private String playtimeCommandMessage = "&f{PLAYER}&7 playtime: &f{TIME}";
     private String playtimeCommandNotFound = "&cPlayer &f{PLAYER}&c not found!";
+    private String playtimeCommandNoPermission = "&cYou don't have permission to view &f{PLAYER}&c's playtime!";
+    private Object essentials = null;
 
     @Override
     public void onEnable() {
@@ -44,14 +51,32 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
         loadConfig();
         loadRestrictedItems();
 
+        // Try to hook into Essentials for AFK detection
+        try {
+            Plugin essentialsPlugin = getServer().getPluginManager().getPlugin("Essentials");
+            if (essentialsPlugin != null) {
+                essentials = essentialsPlugin;
+                Bukkit.getLogger().info("PlaytimePlus: Essentials hooked for AFK detection");
+            }
+        } catch (Exception e) {
+            Bukkit.getLogger().warning("PlaytimePlus: Could not hook into Essentials: " + e.getMessage());
+        }
+
         timerTaskId = getServer().getScheduler().scheduleSyncRepeatingTask(this, () -> {
             long now = System.currentTimeMillis();
             for (Player p : getServer().getOnlinePlayers()) {
                 UUID uuid = p.getUniqueId();
                 if (sessionStarts.containsKey(uuid)) {
-                    long sessionSeconds = (now - sessionStarts.get(uuid)) / 1000;
-                    long base = loadTotal(uuid);
-                    totals.put(uuid, base + sessionSeconds);
+                    // Check if player is AFK
+                    if (isPlayerAFK(p)) {
+                        // Don't count AFK time, but keep track of activity
+                        lastActivityTime.put(uuid, now);
+                    } else {
+                        // Update playtime only if not AFK
+                        long sessionSeconds = (now - sessionStarts.get(uuid)) / 1000;
+                        long base = loadTotal(uuid);
+                        totals.put(uuid, base + sessionSeconds);
+                    }
                 }
             }
         }, 1200L, 1200L);
@@ -113,6 +138,11 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
         ItemStack item = e.getItemInHand();
         
         if (item == null) return;
+        
+        // Check if player has admin permission bypass
+        if (hasAdminPermission(p)) {
+            return;
+        }
         
         String materialName = item.getType().toString();
         if (!restrictedItems.containsKey(materialName)) return;
@@ -191,6 +221,13 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
                 player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
                 return true;
             }
+            
+            // Check permission to view other players' playtime
+            if (!target.equals(player) && !canViewPlayerPlaytime(player, target)) {
+                String message = playtimeCommandNoPermission.replace("{PLAYER}", target.getName());
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+                return true;
+            }
         }
 
         long playtimeSeconds = getCurrentPlaytime(target);
@@ -247,6 +284,17 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
                 
                 if (line.startsWith("show-playtime-in-chat:")) {
                     showPlaytimeInChat = parseBoolean(line.split(":", 2)[1].trim());
+                } else if (line.startsWith("afk-detection-enabled:")) {
+                    afkDetectionEnabled = parseBoolean(line.split(":", 2)[1].trim());
+                } else if (line.startsWith("afk-timeout-minutes:")) {
+                    try {
+                        long minutes = Long.parseLong(line.split(":", 2)[1].trim());
+                        afkTimeout = minutes * 60000; // Convert to milliseconds
+                    } catch (NumberFormatException e) {
+                        Bukkit.getLogger().warning("PlaytimePlus: Invalid afk-timeout-minutes value");
+                    }
+                } else if (line.startsWith("admin-permission:")) {
+                    adminPermission = line.split(":", 2)[1].trim();
                 } else if (line.startsWith("restriction-message-use:")) {
                     restrictionMessageUse = line.split(":", 2)[1].trim();
                 } else if (line.startsWith("restriction-message-place:")) {
@@ -255,6 +303,8 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
                     playtimeCommandMessage = line.split(":", 2)[1].trim();
                 } else if (line.startsWith("playtime-command-not-found:")) {
                     playtimeCommandNotFound = line.split(":", 2)[1].trim();
+                } else if (line.startsWith("playtime-command-no-permission:")) {
+                    playtimeCommandNoPermission = line.split(":", 2)[1].trim();
                 }
             }
         } catch (IOException e) {
@@ -324,6 +374,14 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
             bw.write("# PlaytimePlus Configuration\n\n");
             bw.write("# Display playtime in chat messages (true/false)\n");
             bw.write("show-playtime-in-chat: true\n\n");
+            bw.write("# AFK Detection Settings\n");
+            bw.write("# Enable AFK detection to exclude idle time from playtime tracking\n");
+            bw.write("afk-detection-enabled: true\n");
+            bw.write("# Timeout before a player is considered AFK (in minutes)\n");
+            bw.write("afk-timeout-minutes: 10\n\n");
+            bw.write("# Admin Permission (from PermissionsEx)\n");
+            bw.write("# Players with this permission can bypass block placement restrictions\n");
+            bw.write("admin-permission: Admin\n\n");
             bw.write("# Restriction messages with color codes (&c = red, &f = white, &7 = gray)\n");
             bw.write("# Variables: {TIME} = required time, {ITEM} = item name\n");
             bw.write("restriction-message-use: '&cYou need &f{TIME}&c more playtime to use &f{ITEM}&c!'\n");
@@ -331,7 +389,8 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
             bw.write("# Playtime command messages\n");
             bw.write("# Variables: {PLAYER} = player name, {TIME} = playtime\n");
             bw.write("playtime-command-message: '&f{PLAYER}&7 playtime: &f{TIME}'\n");
-            bw.write("playtime-command-not-found: '&cPlayer &f{PLAYER}&c not found!'\n\n");
+            bw.write("playtime-command-not-found: '&cPlayer &f{PLAYER}&c not found!'\n");
+            bw.write("playtime-command-no-permission: '&cYou don\\'t have permission to view &f{PLAYER}&c\\'s playtime!'\n\n");
             bw.write("# Item Playtime Restrictions\n");
             bw.write("# Format: ITEM_NAME: hours_required\n");
             bw.write("# Example:\n");
@@ -345,5 +404,75 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
 
     private String formatItemName(String materialName) {
         return materialName.toLowerCase().replace("_", " ");
+    }
+
+    /**
+     * Check if a player has admin permission to bypass block placement restrictions
+     */
+    private boolean hasAdminPermission(Player p) {
+        try {
+            PermissionUser user = PermissionsEx.getPermissionManager().getUser(p.getName());
+            if (user != null && user.has(adminPermission)) {
+                return true;
+            }
+        } catch (Exception e) {
+            // Fall back to Bukkit permission check
+        }
+        
+        return p.hasPermission("playtimeplus.admin");
+    }
+
+    /**
+     * Check if a player can view another player's playtime
+     */
+    private boolean canViewPlayerPlaytime(Player viewer, Player target) {
+        // Admin/self always can view
+        if (viewer.equals(target) || hasAdminPermission(viewer)) {
+            return true;
+        }
+        
+        // Check for view permission node
+        try {
+            PermissionUser user = PermissionsEx.getPermissionManager().getUser(viewer.getName());
+            if (user != null && user.has("playtimeplus.view.others")) {
+                return true;
+            }
+        } catch (Exception e) {
+            // Fall back to Bukkit permission check
+        }
+        
+        return viewer.hasPermission("playtimeplus.view.others");
+    }
+
+    /**
+     * Check if a player is AFK using Essentials or a timeout mechanism
+     */
+    private boolean isPlayerAFK(Player p) {
+        if (!afkDetectionEnabled) return false;
+        
+        // Try to use Essentials AFK detection if available
+        if (essentials != null) {
+            try {
+                // Reflection-based approach to check if player is AFK in Essentials
+                Class<?> essentialsClass = essentials.getClass();
+                Object userData = essentialsClass.getMethod("getUser", String.class).invoke(essentials, p.getName());
+                if (userData != null) {
+                    Class<?> userClass = userData.getClass();
+                    boolean isAfk = (Boolean) userClass.getMethod("isAfk").invoke(userData);
+                    return isAfk;
+                }
+            } catch (Exception e) {
+                // If Essentials check fails, fall back to timeout method
+            }
+        }
+        
+        // Fallback: check if player hasn't moved or acted in a while
+        UUID uuid = p.getUniqueId();
+        if (lastActivityTime.containsKey(uuid)) {
+            long timeSinceActivity = System.currentTimeMillis() - lastActivityTime.get(uuid);
+            return timeSinceActivity > afkTimeout;
+        }
+        
+        return false;
     }
 }

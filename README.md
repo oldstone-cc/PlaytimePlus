@@ -2,16 +2,19 @@
 
 > Originally created for the [Oldstone](https://oldstone.net) beta Minecraft server. Publicly available for all Project Poseidon servers.
 
-A Bukkit plugin for Project Poseidon (Minecraft Beta 1.7.3) that tracks player playtime and integrates it into chat messages. Includes item usage restrictions based on playtime thresholds.
+A Bukkit plugin for Project Poseidon (Minecraft Beta 1.7.3) that tracks player playtime and integrates it into chat messages. Includes item usage restrictions based on playtime thresholds, with AFK detection and admin bypass support.
 
 ## Features
 
 PlaytimePlus provides a straightforward way to track and display player activity:
 
 - **Automatic playtime tracking**: Records total playtime for each player across sessions
+- **AFK detection**: Excludes idle time from playtime tracking using Essentials integration
 - **Chat integration**: Shows playtime in chat messages (optional, configurable)
 - **Playtime commands**: `/playtime` and `/pt` to check your own or other players' playtime
 - **Item restrictions**: Prevent newer players from using specific items until they reach playtime thresholds
+- **Admin bypass**: Players with admin permission can bypass block placement restrictions
+- **Permission control**: Limit who can view other players' playtime
 - **Fully configurable**: Customize all messages, restrictions, and behavior via config file
 - **PermissionsEx integration**: Works with your existing permission system
 
