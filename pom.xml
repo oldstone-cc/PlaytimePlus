@@ -25,13 +25,14 @@
             <systemPath>${project.basedir}/lib/project-poseidon-1.1.10.jar</systemPath>
         </dependency>
         
-        <!-- Local PermissionsEx JAR -->
+        <!-- Local PermissionsEx JAR (Optional) -->
         <dependency>
             <groupId>ru.tehkode</groupId>
             <artifactId>PermissionsEx</artifactId>
             <version>1.23.5</version>
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/PermissionsEx.jar</systemPath>
+            <optional>true</optional>
         </dependency>
     </dependencies>
     

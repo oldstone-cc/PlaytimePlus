@@ -17,9 +17,6 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.Bukkit;
 import org.bukkit.inventory.ItemStack;
 
-import ru.tehkode.permissions.PermissionUser;
-import ru.tehkode.permissions.bukkit.PermissionsEx;
-
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
@@ -43,6 +40,8 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
     private String playtimeCommandNotFound = "&cPlayer &f{PLAYER}&c not found!";
     private String playtimeCommandNoPermission = "&cYou don't have permission to view &f{PLAYER}&c's playtime!";
     private Object essentials = null;
+    private Object permissionsEx = null;
+    private Object groupManager = null;
 
     @Override
     public void onEnable() {
@@ -51,6 +50,28 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
         loadConfig();
         loadRestrictedItems();
 
+        // Try to hook into PermissionsEx
+        try {
+            Plugin pexPlugin = getServer().getPluginManager().getPlugin("PermissionsEx");
+            if (pexPlugin != null) {
+                permissionsEx = pexPlugin;
+                Bukkit.getLogger().info("PlaytimePlus: PermissionsEx hooked for prefix/suffix support");
+            }
+        } catch (Exception e) {
+            Bukkit.getLogger().warning("PlaytimePlus: Could not hook into PermissionsEx: " + e.getMessage());
+        }
+        
+        // Try to hook into GroupManager
+        try {
+            Plugin gmPlugin = getServer().getPluginManager().getPlugin("GroupManager");
+            if (gmPlugin != null) {
+                groupManager = gmPlugin;
+                Bukkit.getLogger().info("PlaytimePlus: GroupManager hooked for prefix/suffix support");
+            }
+        } catch (Exception e) {
+            Bukkit.getLogger().warning("PlaytimePlus: Could not hook into GroupManager: " + e.getMessage());
+        }
+        
         // Try to hook into Essentials for AFK detection
         try {
             Plugin essentialsPlugin = getServer().getPluginManager().getPlugin("Essentials");
@@ -174,13 +195,40 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
         String prefix = "";
         String suffix = "";
 
-        try {
-            PermissionUser user = PermissionsEx.getPermissionManager().getUser(p.getName());
-            if (user != null) {
-                prefix = user.getPrefix();
-                suffix = user.getSuffix();
+        // Try to get prefix/suffix from PermissionsEx if available
+        if (permissionsEx != null) {
+            try {
+                Class<?> pexClass = permissionsEx.getClass();
+                Object permManager = pexClass.getMethod("getPermissionManager").invoke(permissionsEx);
+                Object user = permManager.getClass().getMethod("getUser", String.class).invoke(permManager, p.getName());
+                if (user != null) {
+                    prefix = (String) user.getClass().getMethod("getPrefix").invoke(user);
+                    suffix = (String) user.getClass().getMethod("getSuffix").invoke(user);
+                }
+            } catch (Exception ex) {
+                // Failed to get PEX prefix/suffix, try GroupManager
             }
-        } catch (Exception ex) {
+        }
+        
+        // Try GroupManager if PEX didn't work or isn't available
+        if ((prefix == null || prefix.isEmpty()) && (suffix == null || suffix.isEmpty()) && groupManager != null) {
+            try {
+                Class<?> gmClass = Class.forName("org.anjocaido.groupmanager.GroupManager");
+                Object worldsHolder = gmClass.getMethod("getWorldsHolder").invoke(groupManager);
+                Object worldData = worldsHolder.getClass().getMethod("getWorldData", String.class)
+                    .invoke(worldsHolder, p.getWorld().getName());
+                if (worldData != null) {
+                    Object permHandler = worldData.getClass().getMethod("getPermissionsHandler").invoke(worldData);
+                    prefix = (String) permHandler.getClass().getMethod("getUserPrefix", String.class).invoke(permHandler, p.getName());
+                    suffix = (String) permHandler.getClass().getMethod("getUserSuffix", String.class).invoke(permHandler, p.getName());
+                }
+            } catch (Exception ex) {
+                // Failed to get GroupManager prefix/suffix, fall through to displayname
+            }
+        }
+        
+        // Fallback: use display name if neither PEX nor GroupManager worked
+        if ((prefix == null || prefix.isEmpty()) && (suffix == null || suffix.isEmpty())) {
             String display = p.getDisplayName();
             if (display != null && !display.equals(p.getName())) {
                 prefix = display.replace(p.getName(), "").trim();
@@ -258,11 +306,20 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
         saveTotal(uuid, total);
     }
 
-    private String formatTime(long seconds) {
-        long h = seconds / 3600;
-        long m = (seconds % 3600) / 60;
-        return h > 0 ? h + "h" + m + "m" : m + "m";
+private String formatTime(long seconds) {
+    long days = seconds / 86400; // 24h * 3600
+    long hours = (seconds % 86400) / 3600;
+    long minutes = (seconds % 3600) / 60;
+
+    if (days > 0) {
+        return days + "d" + hours + "h" + minutes + "m";
+    } else if (hours > 0) {
+        return hours + "h" + minutes + "m";
+    } else {
+        return minutes + "m";
     }
+}
+
 
     private void createDataFolder() {
         File playersDir = new File(getDataFolder(), "players");
@@ -410,16 +467,49 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
      * Check if a player has admin permission to bypass block placement restrictions
      */
     private boolean hasAdminPermission(Player p) {
-        try {
-            PermissionUser user = PermissionsEx.getPermissionManager().getUser(p.getName());
-            if (user != null && user.has(adminPermission)) {
-                return true;
-            }
-        } catch (Exception e) {
-            // Fall back to Bukkit permission check
+        // First check Bukkit permissions
+        if (p.hasPermission("playtimeplus.admin")) {
+            return true;
         }
         
-        return p.hasPermission("playtimeplus.admin");
+        // Try PEX permission check if available
+        if (permissionsEx != null) {
+            try {
+                Class<?> pexClass = permissionsEx.getClass();
+                Object permManager = pexClass.getMethod("getPermissionManager").invoke(permissionsEx);
+                Object user = permManager.getClass().getMethod("getUser", String.class).invoke(permManager, p.getName());
+                if (user != null) {
+                    boolean hasPerm = (Boolean) user.getClass().getMethod("has", String.class).invoke(user, adminPermission);
+                    if (hasPerm) {
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                // Try GroupManager next
+            }
+        }
+        
+        // Try GroupManager permission check if available
+        if (groupManager != null) {
+            try {
+                Class<?> gmClass = Class.forName("org.anjocaido.groupmanager.GroupManager");
+                Object worldsHolder = gmClass.getMethod("getWorldsHolder").invoke(groupManager);
+                Object worldData = worldsHolder.getClass().getMethod("getWorldData", String.class)
+                    .invoke(worldsHolder, p.getWorld().getName());
+                if (worldData != null) {
+                    Object permHandler = worldData.getClass().getMethod("getPermissionsHandler").invoke(worldData);
+                    boolean hasPerm = (Boolean) permHandler.getClass().getMethod("has", String.class, String.class)
+                        .invoke(permHandler, p.getName(), adminPermission);
+                    if (hasPerm) {
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                // Fall back to false
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -431,17 +521,45 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
             return true;
         }
         
-        // Check for view permission node
-        try {
-            PermissionUser user = PermissionsEx.getPermissionManager().getUser(viewer.getName());
-            if (user != null && user.has("playtimeplus.view.others")) {
-                return true;
-            }
-        } catch (Exception e) {
-            // Fall back to Bukkit permission check
+        // Check Bukkit permissions first
+        if (viewer.hasPermission("playtimeplus.view.others")) {
+            return true;
         }
         
-        return viewer.hasPermission("playtimeplus.view.others");
+        // Try PEX permission check if available
+        if (permissionsEx != null) {
+            try {
+                Class<?> pexClass = permissionsEx.getClass();
+                Object permManager = pexClass.getMethod("getPermissionManager").invoke(permissionsEx);
+                Object user = permManager.getClass().getMethod("getUser", String.class).invoke(permManager, viewer.getName());
+                if (user != null) {
+                    boolean hasPerm = (Boolean) user.getClass().getMethod("has", String.class).invoke(user, "playtimeplus.view.others");
+                    return hasPerm;
+                }
+            } catch (Exception e) {
+                // Try GroupManager next
+            }
+        }
+        
+        // Try GroupManager permission check if available
+        if (groupManager != null) {
+            try {
+                Class<?> gmClass = Class.forName("org.anjocaido.groupmanager.GroupManager");
+                Object worldsHolder = gmClass.getMethod("getWorldsHolder").invoke(groupManager);
+                Object worldData = worldsHolder.getClass().getMethod("getWorldData", String.class)
+                    .invoke(worldsHolder, viewer.getWorld().getName());
+                if (worldData != null) {
+                    Object permHandler = worldData.getClass().getMethod("getPermissionsHandler").invoke(worldData);
+                    boolean hasPerm = (Boolean) permHandler.getClass().getMethod("has", String.class, String.class)
+                        .invoke(permHandler, viewer.getName(), "playtimeplus.view.others");
+                    return hasPerm;
+                }
+            } catch (Exception e) {
+                // Fall back to false
+            }
+        }
+        
+        return false;
     }
 
     /**

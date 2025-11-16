@@ -3,8 +3,7 @@ version: 1.2
 main: main.java.com.playtime.PlaytimePlus
 author: YourName
 description: Displays playtime in chat and restricts item usage by playtime
-depend: [PermissionsEx]
-softdepend: [Essentials]
+softdepend: [PermissionsEx, GroupManager, Essentials]
 commands:
   playtime:
     description: Check your playtime or another player's playtime
