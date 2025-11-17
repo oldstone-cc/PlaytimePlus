@@ -90,13 +90,20 @@ public final class PlaytimePlus extends JavaPlugin implements Listener {
                 if (sessionStarts.containsKey(uuid)) {
                     // Check if player is AFK
                     if (isPlayerAFK(p)) {
-                        // Don't count AFK time, but keep track of activity
+                        // Don't count AFK time, but update session start to current time
+                        // so we don't count the AFK period
+                        sessionStarts.put(uuid, now);
                         lastActivityTime.put(uuid, now);
                     } else {
-                        // Update playtime only if not AFK
+                        // Calculate session time and add to base total
                         long sessionSeconds = (now - sessionStarts.get(uuid)) / 1000;
-                        long base = loadTotal(uuid);
-                        totals.put(uuid, base + sessionSeconds);
+                        if (sessionSeconds > 0) {
+                            // Add the session time to the stored total
+                            long currentTotal = totals.get(uuid);
+                            totals.put(uuid, currentTotal + sessionSeconds);
+                            // Reset session start for next interval
+                            sessionStarts.put(uuid, now);
+                        }
                     }
                 }
             }
